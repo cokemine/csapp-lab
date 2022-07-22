@@ -1,0 +1,18 @@
+{
+  "name": "csapp-lab",
+  "version": "0.0.0",
+  "description": "",
+  "private": "true",
+  "repository": "https://github.com/cokemine/csapp-lab.git",
+  "main": "index.js",
+  "scripts": {
+    "lint": "textlint --fix ./**/README.md"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "textlint": "^12.2.1",
+    "textlint-rule-ja-space-between-half-and-full-width": "^2.2.0"
+  }
+}
