@@ -14,6 +14,10 @@
 
 - `%rsi` 保存第二个参数
 
+- `%rdx` 保存第三个参数
+
+- `%rcx` 保存第四个参数
+
 - `%rsp` 指向栈顶
 
 - `%rip` 程序计数器，指向当前执行代码的位置
@@ -177,3 +181,177 @@ $$
 **答案**：1 2 4 8 16 32
 
 ### phase_3
+
+先观察一下 phase_3 的汇编代码：
+
+```assembly
+0000000000400f43 <phase_3>:
+  400f43:	48 83 ec 18          	sub    $0x18,%rsp
+  400f47:	48 8d 4c 24 0c       	lea    0xc(%rsp),%rcx
+  400f4c:	48 8d 54 24 08       	lea    0x8(%rsp),%rdx
+  400f51:	be cf 25 40 00       	mov    $0x4025cf,%esi
+  400f56:	b8 00 00 00 00       	mov    $0x0,%eax
+  400f5b:	e8 90 fc ff ff       	call   400bf0 <__isoc99_sscanf@plt>  #调用了 sscanf 函数
+  400f60:	83 f8 01             	cmp    $0x1,%eax
+  400f63:	7f 05                	jg     400f6a <phase_3+0x27>
+  400f65:	e8 d0 04 00 00       	call   40143a <explode_bomb>
+  400f6a:	83 7c 24 08 07       	cmpl   $0x7,0x8(%rsp)
+  400f6f:	77 3c                	ja     400fad <phase_3+0x6a>
+  400f71:	8b 44 24 08          	mov    0x8(%rsp),%eax
+  400f75:	ff 24 c5 70 24 40 00 	jmp    *0x402470(,%rax,8)
+  400f7c:	b8 cf 00 00 00       	mov    $0xcf,%eax
+  400f81:	eb 3b                	jmp    400fbe <phase_3+0x7b>
+  400f83:	b8 c3 02 00 00       	mov    $0x2c3,%eax
+  400f88:	eb 34                	jmp    400fbe <phase_3+0x7b>
+  400f8a:	b8 00 01 00 00       	mov    $0x100,%eax
+  400f8f:	eb 2d                	jmp    400fbe <phase_3+0x7b>
+  400f91:	b8 85 01 00 00       	mov    $0x185,%eax
+  400f96:	eb 26                	jmp    400fbe <phase_3+0x7b>
+  400f98:	b8 ce 00 00 00       	mov    $0xce,%eax
+  400f9d:	eb 1f                	jmp    400fbe <phase_3+0x7b>
+  400f9f:	b8 aa 02 00 00       	mov    $0x2aa,%eax
+  400fa4:	eb 18                	jmp    400fbe <phase_3+0x7b>
+  400fa6:	b8 47 01 00 00       	mov    $0x147,%eax
+  400fab:	eb 11                	jmp    400fbe <phase_3+0x7b>
+  400fad:	e8 88 04 00 00       	call   40143a <explode_bomb>
+  400fb2:	b8 00 00 00 00       	mov    $0x0,%eax
+  400fb7:	eb 05                	jmp    400fbe <phase_3+0x7b>
+  400fb9:	b8 37 01 00 00       	mov    $0x137,%eax
+  400fbe:	3b 44 24 0c          	cmp    0xc(%rsp),%eax
+  400fc2:	74 05                	je     400fc9 <phase_3+0x86>
+  400fc4:	e8 71 04 00 00       	call   40143a <explode_bomb>
+  400fc9:	48 83 c4 18          	add    $0x18,%rsp
+  400fcd:	c3                   	ret    
+```
+
+phase_3 又调用了 sscanf 函数，说明我们输入的字符串又经过格式化被转换成了数字，还是得看下格式字符串是什么。
+
+```assembly
+(gdb) x/s 0x4025cf
+0x4025cf:       "%d %d"
+```
+
+显然我们输入的应该为两个整型数组，以空格分隔。
+
+从参数的顺序可以看到格式化后的第一个数字放到了 `%rsp + 0x8`，第二个数字被放到了 `%rsp + 0xc`
+
+```assembly
+400f47:	48 8d 4c 24 0c       	lea    0xc(%rsp),%rcx
+400f4c:	48 8d 54 24 08       	lea    0x8(%rsp),%rdx
+```
+
+观察到 `0x400f6a` 如果第一个数字大于 7 就会调用炸弹爆炸函数。说明第一个数字应该是小于等于 7 的。
+
+```assembly
+400f6a:	83 7c 24 08 07       	cmpl   $0x7,0x8(%rsp)
+400f6f:	77 3c                	ja     400fad <phase_3+0x6a>
+# 下面一行是 0x400fad
+400fad:	e8 88 04 00 00       	call   40143a <explode_bomb>
+```
+
+这里有一个跳转表，推测可能是用了 switch 语句。在看到后续代码可以判断。根据第一个数的不同，第二个数的答案也不同
+
+```assembly
+400f75:	ff 24 c5 70 24 40 00 	jmp    *0x402470(,%rax,8) # %rax*8+0x402470 的地址
+# 退出 switch 后比较输入第二个数字和 %eax 是否相等，switch分支内针对每一个不同的第一个数，%eax 也被赋予了不同的值
+400fbe:	3b 44 24 0c          	cmp    0xc(%rsp),%eax
+```
+
+Anyway，其实也不需要知道这是个 switch 语句，更简单的方法是已经知道第一个数是 0 - 7 了，只需要先把第一个数确定下来，也不用管跳转表，因为第一个数确定后跳转到哪一个指令也是确定的。然后打上断点 `stepi` 单步调试，偷窥一下 `%eax` 寄存器里保存的是什么就可以了。
+
+**答案**： 
+
+```
+0 207
+1 311
+2 707
+3 256
+4 389
+5 206
+6 682
+7 327
+```
+
+### phase_4
+
+先看汇编代码
+
+```assembly
+000000000040100c <phase_4>:
+  40100c:	48 83 ec 18          	sub    $0x18,%rsp
+  401010:	48 8d 4c 24 0c       	lea    0xc(%rsp),%rcx
+  401015:	48 8d 54 24 08       	lea    0x8(%rsp),%rdx
+  40101a:	be cf 25 40 00       	mov    $0x4025cf,%esi
+  40101f:	b8 00 00 00 00       	mov    $0x0,%eax
+  401024:	e8 c7 fb ff ff       	call   400bf0 <__isoc99_sscanf@plt> # 调用 sscanf
+  401029:	83 f8 02             	cmp    $0x2,%eax  # sscanf 返回值为格式化的组数，从这也可以看出来我们格式化后应为两组数据（后续观察格式字符串可知应为两个数字）
+  40102c:	75 07                	jne    401035 <phase_4+0x29>
+  40102e:	83 7c 24 08 0e       	cmpl   $0xe,0x8(%rsp) # a[0] 和 0xe 比较
+  401033:	76 05                	jbe    40103a <phase_4+0x2e> # a[0]应该小于等于 0xe 否则炸弹爆炸
+  401035:	e8 00 04 00 00       	call   40143a <explode_bomb>
+  40103a:	ba 0e 00 00 00       	mov    $0xe,%edx # %edx = 0xe # 第三个参数为 0xe （推测下面为调用另一个函数做准备）
+  40103f:	be 00 00 00 00       	mov    $0x0,%esi # %edx = 0x0 # 第二个参数为 0x0
+  401044:	8b 7c 24 08          	mov    0x8(%rsp),%edi # %edi = a[0] 第一个参数为我们输入的字符串被格式化后的第一个数字
+  401048:	e8 81 ff ff ff       	call   400fce <func4> #调用 func4
+  40104d:	85 c0                	test   %eax,%eax # 判断 func4 函数返回值是否为 0，非 0 则炸弹爆炸
+  40104f:	75 07                	jne    401058 <phase_4+0x4c>
+  401051:	83 7c 24 0c 00       	cmpl   $0x0,0xc(%rsp) #判断 a[1] 是否为 0 非 0 则炸弹爆炸
+  401056:	74 05                	je     40105d <phase_4+0x51>
+  401058:	e8 dd 03 00 00       	call   40143a <explode_bomb>
+  40105d:	48 83 c4 18          	add    $0x18,%rsp
+  401061:	c3                   	ret    
+```
+
+它又调用了 sscanf，看了看格式字符串，说明这个炸弹的密码还是两个数字
+
+```assembly
+(gdb) x/s 0x4025cf
+0x4025cf:       "%d %d"
+```
+
+继续分析可以得知（见注释）第二个数字一定是 0，但是第一个数字一定小于 14，具体还无从得知。
+
+~~其实第一个数可以从0开始试到14，反正肯定能试出来~~
+
+为了分析第一个数字为何值，需要看看它调用的函数 func4，调用 func4 应该为 func4(a[0], 0, 14)，从这个函数名看不出什么有效信息，还是得深入看看。
+
+显然这是一个递归。假设这个函数是 func func4(x, y, z int) (ret int)
+
+```assembly
+0000000000400fce <func4>:
+  400fce:	48 83 ec 08          	sub    $0x8,%rsp
+  400fd2:	89 d0                	mov    %edx,%eax # ret = z | ret = 14
+  400fd4:	29 f0                	sub    %esi,%eax # ret = ret - y | ret = 14 - 0 = 14
+  400fd6:	89 c1                	mov    %eax,%ecx # %ecx = ret | %ecx = 14
+  400fd8:	c1 e9 1f             	shr    $0x1f,%ecx # %ecx = %ecx >> 31 | %ecx = 0
+  400fdb:	01 c8                	add    %ecx,%eax # ret = ret + z | ret = 0 + 14 = 14
+  400fdd:	d1 f8                	sar    %eax # ret = ret >> 1 | ret = 7
+  400fdf:	8d 0c 30             	lea    (%rax,%rsi,1),%ecx # %ecx = ret + y * 1 | %ecx = 7
+  400fe2:	39 f9                	cmp    %edi,%ecx # 比较 x 和 %ecx | 比较 a[0] 和 7
+  400fe4:	7e 0c                	jle    400ff2 <func4+0x24> # 如果 a[0] <= 7 跳转
+  400fe6:	8d 51 ff             	lea    -0x1(%rcx),%edx # 否则 z = %ecx - 1 | z = 6
+  400fe9:	e8 e0 ff ff ff       	call   400fce <func4> # 递归调用 func4(x, y, z - 1) | func4(a[0], 0, 6)
+  400fee:	01 c0                	add    %eax,%eax
+  400ff0:	eb 15                	jmp    401007 <func4+0x39>
+  400ff2:	b8 00 00 00 00       	mov    $0x0,%eax # 设置返回值为 0
+  400ff7:	39 f9                	cmp    %edi,%ecx # 比较 x 和 %ecx | 比较 a[0] 和 7
+  400ff9:	7d 0c                	jge    401007 <func4+0x39> # 如果 x >= %ecx 退出递归 | a[0] 应大于等于 7
+  400ffb:	8d 71 01             	lea    0x1(%rcx),%esi # 否则 y = %ecx + 1
+  400ffe:	e8 cb ff ff ff       	call   400fce <func4> # func(x, %ecx + 1, z)
+  401003:	8d 44 00 01          	lea    0x1(%rax,%rax,1),%eax
+  401007:	48 83 c4 08          	add    $0x8,%rsp
+  40100b:	c3                   	ret    
+```
+
+递归比较难分析，真正让我自己根据汇编代码反编译出来 C Code 有些难度。但最好的情况下我们让这个函数 func4 只执行一次。通过对汇编代码的分析，可以知道第一次执行 func4，当$$7 <= x <= 7$$ 时就不会递归执行 func4 而是直接返回 0
+
+那本体最优解即为 `7 0`（因为 func4 只执行了一次，这也是最快的解）当然如果深入探究这个递归函数或者暴力枚举 1-14 的话
+
+**答案**： 
+
+```
+0 0
+1 0
+3 0
+7 0
+```
