@@ -355,3 +355,259 @@ Anyway，其实也不需要知道这是个 switch 语句，更简单的方法是
 3 0
 7 0
 ```
+
+### phase_5
+
+还是先看汇编代码
+
+```assembly
+0000000000401062 <phase_5>:
+  401062:	53                   	push   %rbx
+  401063:	48 83 ec 20          	sub    $0x20,%rsp
+  401067:	48 89 fb             	mov    %rdi,%rbx # %rbx = %rdi = 输入的字符串
+  40106a:	64 48 8b 04 25 28 00 	mov    %fs:0x28,%rax
+  401071:	00 00 
+  401073:	48 89 44 24 18       	mov    %rax,0x18(%rsp)
+  401078:	31 c0                	xor    %eax,%eax
+  40107a:	e8 9c 02 00 00       	call   40131b <string_length> # 调用了 string_length 函数 第一个参数是输入的字符串，推测是判断我们输入字符串的长度
+  40107f:	83 f8 06             	cmp    $0x6,%eax # 我们输入的字符串长度必须为 6 否则炸弹爆炸
+  401082:	74 4e                	je     4010d2 <phase_5+0x70>
+  401084:	e8 b1 03 00 00       	call   40143a <explode_bomb>
+  401089:	eb 47                	jmp    4010d2 <phase_5+0x70> # 跳转到 0x4010d2 后将 %eax 设置为 0 又跳回 0x40108b 了
+  40108b:	0f b6 0c 03          	movzbl (%rbx,%rax,1),%ecx # %ecx=%rbx+%rax %rax此时为 0，%ecx 为输入字符串的第一个字符
+  40108f:	88 0c 24             	mov    %cl,(%rsp) # %cl 就是 %ecx
+  401092:	48 8b 14 24          	mov    (%rsp),%rdx # 和上面的语句一起看，就是把 %ecx 的值赋值给了 %rdx
+  401096:	83 e2 0f             	and    $0xf,%edx # %edx = %edx & 0xf。其实就是取 %edx 的低四位（就是第一个字符 ASCII码 的第四位）
+  401099:	0f b6 92 b0 24 40 00 	movzbl 0x4024b0(%rdx),%edx # 将 0x4024b0 + %edx 放到 %edx
+  4010a0:	88 54 04 10          	mov    %dl,0x10(%rsp,%rax,1) # 存放所得结果到 %rsp+0x10+%rax
+  4010a4:	48 83 c0 01          	add    $0x1,%rax # %rax 自增
+  4010a8:	48 83 f8 06          	cmp    $0x6,%rax # 比较 %rax 和 6
+  4010ac:	75 dd                	jne    40108b <phase_5+0x29> # 跳转
+  4010ae:	c6 44 24 16 00       	movb   $0x0,0x16(%rsp)
+  4010b3:	be 5e 24 40 00       	mov    $0x40245e,%esi # 把 0x40245e 移到 %esi第一个参数的位置）
+  4010b8:	48 8d 7c 24 10       	lea    0x10(%rsp),%rdi # 把 0x10 + %rsp 移到 %esi 第二个参数的位置
+  4010bd:	e8 76 02 00 00       	call   401338 <strings_not_equal> # 判断两个字符串是否相等
+  4010c2:	85 c0                	test   %eax,%eax
+  4010c4:	74 13                	je     4010d9 <phase_5+0x77>
+  4010c6:	e8 6f 03 00 00       	call   40143a <explode_bomb>
+  4010cb:	0f 1f 44 00 00       	nopl   0x0(%rax,%rax,1)
+  4010d0:	eb 07                	jmp    4010d9 <phase_5+0x77>
+  4010d2:	b8 00 00 00 00       	mov    $0x0,%eax
+  4010d7:	eb b2                	jmp    40108b <phase_5+0x29>
+  4010d9:	48 8b 44 24 18       	mov    0x18(%rsp),%rax
+  4010de:	64 48 33 04 25 28 00 	xor    %fs:0x28,%rax
+  4010e5:	00 00 
+  4010e7:	74 05                	je     4010ee <phase_5+0x8c>
+  4010e9:	e8 42 fa ff ff       	call   400b30 <__stack_chk_fail@plt>
+  4010ee:	48 83 c4 20          	add    $0x20,%rsp
+  4010f2:	5b                   	pop    %rbx
+  4010f3:	c3                   	ret    
+```
+
+phase_5 中调用 string_length 并判断字符串长度是否为 6，同时又有以下语句
+
+```assembly
+4010a4:	48 83 c0 01          	add    $0x1,%rax # %rax 自增
+4010a8:	48 83 f8 06          	cmp    $0x6,%rax # 比较 %rax 和 6
+4010ac:	75 dd                	jne    40108b <phase_5+0x29> # 跳转
+```
+
+这是一个显然的循环结构，翻译到 C 语言即为
+
+```c
+while(i < 6) {
+    ...
+    i++;
+}
+```
+
+从汇编代码中可以推测看到 `0x4024b0` 和 `0x40245e` 地址和存放的是两个固定的字符串。
+
+```assembly
+(gdb) x/s 0x4024b0
+0x4024b0 <array.3449>:  "maduiersnfotvbylSo you think you can stop the bomb with ctrl-c, do you?"
+(gdb) x/s 0x40245e
+0x40245e:       "flyers"
+```
+
+由于调用 `strings_not_equal`函数时，比较的是 `0x10(%rsp)` 和 "flyers" 两个字符串的大小，那 `0x10(%rsp)` 从哪里来呢？明显循环体的意义就是在构造在 `0x10(%rsp)` 存放的字符串。所以可以很简单的翻译出 C 语言代码如下
+
+```c
+char* dict = "maduiersnfotvbylSo you think you can stop the bomb with ctrl-c, do you?";
+char* ans = "flyers";
+int phase_5(char* input) {
+    char s[6];
+    int i = 0;
+    while(i != 6) {
+        s[i] = dict[input[i] & 0xf];
+        i++;
+    }
+    return !strings_not_equal(ans, s);
+}
+```
+
+也就是说我们输入的6个字符的第四位作为偏移量，用 `maduiersnfotvbylSo you think you can stop the bomb with ctrl-c, do you?` 这段字符串作为字典去构造一个新的字符串，需要使得构造出的字符串为 flyers。根据字典。我们输入的 6 位字符串每一个字符的低四位依次为 `9 F E 5 6 7` 然后查表找合适的字符就可以了，有多种可能性。
+
+我认为这个题目是前 5 个里除了第一个之外最简单的了，毕竟循环结构要比递归和 switch 好理解多了
+
+**答案**： 低四位依次为 `9 F E 5 6 7` 构造出的任意一个由 6 个字符组成的字符串
+
+### phase_6
+
+下面是最后一个炸弹，汇编代码比较多，分开来看比较好。
+
+首先是一些初始化操作。包括调用者保存寄存器、开辟栈空间。读入了6个数字，进行第一次判定。
+
+```assembly
+00000000004010f4 <phase_6>:
+  4010f4:	41 56                	push   %r14 # 调用者保存寄存器
+  4010f6:	41 55                	push   %r13
+  4010f8:	41 54                	push   %r12
+  4010fa:	55                   	push   %rbp
+  4010fb:	53                   	push   %rbx
+  4010fc:	48 83 ec 50          	sub    $0x50,%rsp
+  401100:	49 89 e5             	mov    %rsp,%r13 # %r13 = %rsp
+  401103:	48 89 e6             	mov    %rsp,%rsi # %rsi = %rsp
+  401106:	e8 51 03 00 00       	call   40145c <read_six_numbers> # 又是读入 6 个数字，说明这次的密码还是 6 数字
+  40110b:	49 89 e6             	mov    %rsp,%r14 # %r14 = %rsp
+  40110e:	41 bc 00 00 00 00    	mov    $0x0,%r12d # %r12d = 0x0
+  401114:	4c 89 ed             	mov    %r13,%rbp # %rbp = %r13
+  401117:	41 8b 45 00          	mov    0x0(%r13),%eax # %eax = a[0]
+  40111b:	83 e8 01             	sub    $0x1,%eax  # %eax = a[0] - 1;
+  40111e:	83 f8 05             	cmp    $0x5,%eax # %eax = a[0] - 1 <= 5 -> a[0] <= 6;
+  401121:	76 05                	jbe    401128 <phase_6+0x34>
+  401123:	e8 12 03 00 00       	call   40143a <explode_bomb>
+  401128:	41 83 c4 01          	add    $0x1,%r12d # r12d = 0 + 1 = 1;
+  40112c:	41 83 fc 06          	cmp    $0x6,%r12d # r12d 需要小于 6
+  401130:	74 21                	je     401153 <phase_6+0x5f>
+```
+
+这一段是一个典型的循环结构，结束条件是跳转到 0x401153 说明一直到 0x401153 都是循环体的部分，说明了我们输入的第每个数必须小于等于6
+
+```assembly
+  401132: mov    %r12d,%ebx # %ebx = %r12d = 1
+  # 下面是内层循环的部分 %ebx 在循环最后部分会自增
+  401135: movslq %ebx,%rax  # %rax = %ebx = j
+  401138: mov    (%rsp,%rax,4),%eax # %eax = a[j]
+  40113b: cmp    %eax,0x0(%rbp) # a[j] != a[0]
+  40113e: jne    401145 <phase_6+0x51>
+  401140: callq  40143a <explode_bomb>
+  401145: add    $0x1,%ebx # ebx 也是循环变量 %ebx < 5
+  401148: cmp    $0x5,%ebx
+  40114b: jle    401135 <phase_6+0x41> # 如果不相等就跳转到 0x401135 （继续内循环）否则更新 %r13 结束内循环跳转到 0x401114 开始下一轮外循环
+  40114d: add    $0x4,%r13 # %r13 指向下一个元素 因为外层循环中有将 %rbp 赋值为 %r13 的操作，所以下一次内循环开始的时候 %rbp 指向 a[i]
+  401151: jmp    401114 <phase_6+0x20> 
+```
+
+可以看到这里 $\%r12d$ 代表外层循环变量 $i (i \in [0,6)$， $\%ebx$ 代表内层循环变量 $j (j \in [i + 1,6)$，要求 $(a[i] > 6)\ \&\&\ a[i] != a[j]$ 。所以这一段代码的作用为：输入的 6 个数必须都小于等于 6 并互不相等。接下来从 0x401153 开始看，又是一个循环。
+
+%r14 从上面汇编代码可以看到，%r14 一直指向的 a[0] 没有变化
+
+```assembly
+  401153:	48 8d 74 24 18       	lea    0x18(%rsp),%rsi # %rsi = %rsp + 0x18
+  401158:	4c 89 f0             	mov    %r14,%rax # %rax = %r14 = a[i]
+  40115b:	b9 07 00 00 00       	mov    $0x7,%ecx # $ecx = 7
+  401160:	89 ca                	mov    %ecx,%edx # $edx = 7
+  401162:	2b 10                	sub    (%rax),%edx  # $edx = 7 - %rax
+  401164:	89 10                	mov    %edx,(%rax) # %rax = %edx
+  401166:	48 83 c0 04          	add    $0x4,%rax # %rax 指向 a[i + 1]
+  40116a:	48 39 f0             	cmp    %rsi,%rax # 判断数组是否越界
+  40116d:	75 f1                	jne    401160 <phase_6+0x6c>
+```
+
+这段代码比较好理解，就是我们输入的 6 个数字被处理了一下 $a[i]=7-a[i]$。因为先前已经确定 $a[i] <= 6$ 了，所以处理后的 $a[i]$ 的范围仍然是 $[1,6]$
+
+```assembly
+  40116f:	be 00 00 00 00       	mov    $0x0,%esi # %esi = 0
+  401174:	eb 21                	jmp    401197 <phase_6+0xa3> # 跳到 0x401197
+  #内层循环
+  401176:	48 8b 52 08          	mov    0x8(%rdx),%rdx # 由后续分析可知，这里取的是链表下一个元素的地址（跳8字节跳了两个int）
+  40117a:	83 c0 01             	add    $0x1,%eax # %eax 自增。从下方看，%ecx 是数组中的某个元素 a[i]
+  40117d:	39 c8                	cmp    %ecx,%eax # j < a[i]
+  40117f:	75 f5                	jne    401176 <phase_6+0x82>
+  401181:	eb 05                	jmp    401188 <phase_6+0x94> # 跳出内层循环
+  # 内层循环结束
+  # 上面这个循环其实比较抽象，看起来我们输入的数据被当成了索引，但其实一想比较合理，毕竟前面确保了我们输入的数必须在 [0, 6] 并且互不相同，符合索引的性质
+  # 经过上方的循环，%rdx 应该指向了 nodes[a[i] - 1]
+  # a[i] == 1 的情况，跳过了上面的循环，比较合理，因为是取 nodes[0]
+  401183:	ba d0 32 60 00       	mov    $0x6032d0,%edx # %edx = nodes[0]
+  # 如果进行过上方内循环，会跳过上方指令，毕竟我们好不容易拿到了 nodes[a[i] - 1]，上方指令又给置成 nodes[0]了
+  401188:	48 89 54 74 20       	mov    %rdx,0x20(%rsp,%rsi,2) # rdx 放到了 %rsp+0x20+2i，a 本身占 24 字节，这里应该是把这个地址赋值给了新数组，因为地址 8 字节所以是 2i（看到这里我已经对自己的猜想完全没有信心了）
+  40118d:	48 83 c6 04          	add    $0x4,%rsi # i++
+  401191:	48 83 fe 18          	cmp    $0x18,%rsi # i < 6
+  401195:	74 14                	je     4011ab <phase_6+0xb7>
+  
+  401197:	8b 0c 34             	mov    (%rsp,%rsi,1),%ecx # %ecx= %rsp + %rsi 此处是取数组第一个元素
+  40119a:	83 f9 01             	cmp    $0x1,%ecx # 比较 %ecx 和 1
+  40119d:	7e e4                	jle    401183 <phase_6+0x8f> # 小于等于 1 跳转到 0x401183 因为 a[i] >0 所以只有可能为 1
+  40119f:	b8 01 00 00 00       	mov    $0x1,%eax # 大于等于 1: %eax = 0x1; %edx = 0x6032d0
+  4011a4:	ba d0 32 60 00       	mov    $0x6032d0,%edx
+  4011a9:	eb cb                	jmp    401176 <phase_6+0x82> #回到被跳过的 0x401176
+```
+
+出现的 `0x6032d0` 这个地址让人困惑，如果按字符串输出显然不是一个合法的字符串。因为这一章学过的结构体在这个 lab 中还没有出现，推测这应该是一个结构体。因为有符号表的存在，可以看出这确实是一个自定义结构体，而且从名字看出这应该是一个链表
+
+```assembly
+(gdb) x 0x6032d0
+0x6032d0 <node1>:       0x000000010000014c
+
+(gdb) x/24w 0x6032d0
+0x6032d0 <node1>:       0x0000014c      0x00000001      0x006032e0      0x00000000
+0x6032e0 <node2>:       0x000000a8      0x00000002      0x006032f0      0x00000000
+0x6032f0 <node3>:       0x0000039c      0x00000003      0x00603300      0x00000000
+0x603300 <node4>:       0x000002b3      0x00000004      0x00603310      0x00000000
+0x603310 <node5>:       0x000001dd      0x00000005      0x00603320      0x00000000
+0x603320 <node6>:       0x000001bb      0x00000006      0x00000000      0x00000000
+```
+
+通过观察后面几个字节，基本可以确定链表结构如下
+
+```assembly
+struct node {
+	int val; // 4字节
+	int id; // 4字节
+	node *next; // 8字节
+}
+```
+
+循环部分在注释已经提到了。这样循环下来 %rsp+0x20 这往后又存放了一个数组，我们叫他 $addr$ 吧。$addr$ 的类型是 $(int*)[]$（我想起视频里的数组指针和指针数组的噩梦了，我记不住还是加个括号吧）。$addr[i] = nodes[a[i] - 1]$ 这一部分也就算了个 $addr$ 数组，剩下的看 0x4011ab 开始。
+
+```assembly
+  4011ab:	48 8b 5c 24 20       	mov    0x20(%rsp),%rbx # %rbx 指向 addr[0]
+  4011b0:	48 8d 44 24 28       	lea    0x28(%rsp),%rax # %rax 指向 addr[1]
+  4011b5:	48 8d 74 24 50       	lea    0x50(%rsp),%rsi # %rsi 指向 addr + 6 | 0x50-0x20=0x30=48=8*6
+  4011ba:	48 89 d9             	mov    %rbx,%rcx # %rcx 指向 addr[0]
+  
+  4011bd:	48 8b 10             	mov    (%rax),%rdx # %rdx = addr[1]
+  4011c0:	48 89 51 08          	mov    %rdx,0x8(%rcx) # %addr[0].next = addr[1]
+  4011c4:	48 83 c0 08          	add    $0x8,%rax # % %rax 指向 addr[2]
+  4011c8:	48 39 f0             	cmp    %rsi,%rax # %rsp 和 %rsi 防止越界
+  4011cb:	74 05                	je     4011d2 <phase_6+0xde>
+  4011cd:	48 89 d1             	mov    %rdx,%rcx
+  4011d0:	eb eb                	jmp    4011bd <phase_6+0xc9>
+  
+  4011d2:	48 c7 42 08 00 00 00 	movq   $0x0,0x8(%rdx) # addr[5] = NULL
+  4011d9:	00 
+```
+
+这里比较好理解，做了一步 $addr[i].next=addr[i+1]$比较好理解，因为这是一个链表，我们的数组是有序的，但是还需要调整链表内部的顺序。综合上面的步骤推测它将我们输入的6个数字作为索引，重新将链表进行了排序 。既然我们已经为链表排好序了，说明接下来是要遍历这个链表了。
+
+设当前节点为 $node$ 实际上接下来 $node=\%rbx=node1=addr[0]$
+
+```assembly
+  4011da:	bd 05 00 00 00       	mov    $0x5,%ebp # %ebp=0x5
+  4011df:	48 8b 43 08          	mov    0x8(%rbx),%rax # %rax 指向 node.next
+  4011e3:	8b 00                	mov    (%rax),%eax # %rax = node.next
+  4011e5:	39 03                	cmp    %eax,(%rbx) # node.next.value > node.value 否则炸弹爆炸 cmp 默认取前 4 个字节
+  4011e7:	7d 05                	jge    4011ee <phase_6+0xfa>
+  4011e9:	e8 4c 02 00 00       	call   40143a <explode_bomb>
+  4011ee:	48 8b 5b 08          	mov    0x8(%rbx),%rbx # %rbx 指向 node.next
+  4011f2:	83 ed 01             	sub    $0x1,%ebp # %ebp从 5 循环到 0
+  4011f5:	75 e8                	jne    4011df <phase_6+0xeb>
+```
+
+完工，说明我们输入的6个数字用7减去后的索引值要让数列 $[332, 168, 924, 691, 477,443]$依次递减。
+
+先依次递减后，按索引排好序：$[3, 4, 5, 6, 1, 2]$，再用 7 取依次减去得到我们应输入的6个数字 $[4,3,2,1,6,5]$
+
+**答案**： `4 3 2 1 6 5`
