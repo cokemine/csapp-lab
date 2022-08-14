@@ -1,0 +1,39 @@
+# CSAPP 图 4-7 的初始化操作
+    .pos 0
+    irmovq stack,%rsp # 初始化栈指针
+    call main # 调用 main 函数
+    halt
+
+# Sample linked list 测试数据，复制于 archlab.pdf
+.align 8
+ele1:
+    .quad 0x00a
+    .quad ele2
+ele2:
+    .quad 0x0b0
+    .quad ele3
+ele3:
+    .quad 0xc00
+    .quad 0
+
+main:	
+	irmovq ele1,%rdi # 将链表头指针移到第一个参数
+    call sum_list # 调用 sum_list 函数
+    ret
+
+sum_list:
+    irmovq $0,%rax # 设置返回值为 0，%rax 存放返回值即 ans
+    jmp test # 跳转到 test 判断 while 循环条件
+loop:	
+	mrmovq 0(%rdi),%rsi # 取链表当前节点指针到 %rsi
+    addq %rsi,%rax # ans += node->value
+    mrmovq 8(%rdi),%rsi # node = node->next
+    rrmovq %rsi,%rdi
+test:   
+	andq %rdi,%rdi # 判断当前所指节点是否为 NULL，即是否遍历完链表
+    jne loop
+    ret
+
+# 栈地址从 0x100 开始向下增长
+    .pos 0x100
+stack:

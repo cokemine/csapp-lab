@@ -1,0 +1,38 @@
+                            | # CSAPP 图 4-7 的初始化操作
+0x000:                      |     .pos 0
+0x000: 30f40001000000000000 |     irmovq stack,%rsp # 初始化栈指针
+0x00a: 804800000000000000   |     call main # 调用 main 函数
+0x013: 00                   |     halt
+                            | 
+                            | # Sample linked list 测试数据，复制于 archlab.pdf
+0x018:                      | .align 8
+0x018:                      | ele1:
+0x018: 0a00000000000000     |     .quad 0x00a
+0x020: 2800000000000000     |     .quad ele2
+0x028:                      | ele2:
+0x028: b000000000000000     |     .quad 0x0b0
+0x030: 3800000000000000     |     .quad ele3
+0x038:                      | ele3:
+0x038: 000c000000000000     |     .quad 0xc00
+0x040: 0000000000000000     |     .quad 0
+                            | 
+0x048:                      | main:	
+0x048: 30f71800000000000000 | 	irmovq ele1,%rdi # 将链表头指针移到第一个参数
+0x052: 805c00000000000000   |     call rsum_list # 调用 rsum_list 函数
+0x05b: 90                   |     ret
+                            | 
+0x05c:                      | rsum_list:
+0x05c: a01f                 |     pushq %rcx         # 调用者保存的寄存器
+0x05e: 6277                 |     andq %rdi,%rdi # 如果当前节点为 NULL 则返回
+0x060: 738800000000000000   |     je  end
+0x069: 50170000000000000000 |     mrmovq (%rdi),%rcx # rest = node->value
+0x073: 50770800000000000000 |     mrmovq 8(%rdi),%rdi # node = node->next 传参
+0x07d: 805c00000000000000   |     call rsum_list
+0x086: 6010                 |     addq %rcx,%rax # return val+rest;
+0x088:                      | end:
+0x088: b01f                 |     popq %rcx
+0x08a: 90                   |     ret
+                            | 
+                            | # 栈地址从 0x100 开始向下增长
+0x100:                      |     .pos 0x100
+0x100:                      | stack:

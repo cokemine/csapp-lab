@@ -1,0 +1,38 @@
+# CSAPP 图 4-7 的初始化操作
+    .pos 0
+    irmovq stack,%rsp # 初始化栈指针
+    call main # 调用 main 函数
+    halt
+
+# Sample linked list 测试数据，复制于 archlab.pdf
+.align 8
+ele1:
+    .quad 0x00a
+    .quad ele2
+ele2:
+    .quad 0x0b0
+    .quad ele3
+ele3:
+    .quad 0xc00
+    .quad 0
+
+main:	
+	irmovq ele1,%rdi # 将链表头指针移到第一个参数
+    call rsum_list # 调用 rsum_list 函数
+    ret
+
+rsum_list:
+    pushq %rcx         # 调用者保存的寄存器
+    andq %rdi,%rdi # 如果当前节点为 NULL 则返回
+    je  end
+    mrmovq (%rdi),%rcx # rest = node->value
+    mrmovq 8(%rdi),%rdi # node = node->next 传参
+    call rsum_list
+    addq %rcx,%rax # return val+rest;
+end:
+    popq %rcx
+    ret
+
+# 栈地址从 0x100 开始向下增长
+    .pos 0x100
+stack:

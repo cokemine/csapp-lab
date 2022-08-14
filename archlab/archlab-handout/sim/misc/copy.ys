@@ -1,0 +1,46 @@
+# CSAPP 图 4-7 的初始化操作
+    .pos 0
+    irmovq stack,%rsp # 初始化栈指针
+    call main # 调用 main 函数
+    halt
+
+# 测试数据，复制于 archlab.pdf
+.align 8
+# Source block
+src:
+    .quad 0x00a
+    .quad 0x0b0
+    .quad 0xc00
+# Destination block
+dest:
+    .quad 0x111
+    .quad 0x222
+    .quad 0x333
+
+main:	
+    irmovq src,%rdi
+    irmovq dest,%rsi
+    irmovq $3,%rdx
+    call copy_block # copy_block 接收三个参数：原数组、被复制数组、数组长度
+    ret
+    
+copy_block:
+    irmovq $1,%r13 # 存放一些常数，因为算术运算不能使用立即数
+    irmovq $8,%r14
+    irmovq $0,%rax # result = 0
+    jmp test
+loop:
+    mrmovq 0(%rdi),%r12 # val = src
+    addq %r14,%rdi # src++
+    rmmovq %r12,(%rsi) # dest = val
+    addq %r14,%rsi # dest++
+    xorq %r12,%rax # result ^= val
+    subq %r13,%rdx # len--
+test:
+    andq %rdx,%rdx # 判断 len 是否为 0 退出循环
+    jg loop
+    ret
+
+# 栈地址从 0x100 开始向下增长
+    .pos 0x100
+stack:
