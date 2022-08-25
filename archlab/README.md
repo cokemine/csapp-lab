@@ -182,3 +182,105 @@ stack:
 ./yas rsum.ys
 ./yis rsum.yo
 ```
+### Part B
+
+根据书中课后作业 4.51、4.52 实现 `iaddq` 指令。
+
+![](https://i.imgur.com/nsJXa3u.png)
+
+这一部分主要是书中 4.3 的内容，每一个阶段一个一个修改就可以了。
+
+1. 取值阶段
+
+   *instr_valid*：这个字节对应于一个合法的指令吗？显然我们要在这里插入我们需要添加的指令 `IIADDQ`
+
+   ```c
+   bool instr_valid = icode in 
+   	{ INOP, IHALT, IRRMOVQ, IIRMOVQ, IRMMOVQ, IMRMOVQ,
+   	       IOPQ, IJXX, ICALL, IRET, IPUSHQ, IPOPQ, IIADDQ };
+   ```
+
+   need_regids：这个指令包含一个寄存器指示符字节吗？当然包括。
+
+   ```c
+   bool need_regids =
+   	icode in { IRRMOVQ, IOPQ, IPUSHQ, IPOPQ, 
+   		     IIRMOVQ, IRMMOVQ, IMRMOVQ, IIADDQ };
+   ```
+
+   need_valC：这个指令包括一个常数字吗？当然包括。
+
+   ```c
+   bool need_valC =
+   	icode in { IIRMOVQ, IRMMOVQ, IMRMOVQ, IJXX, ICALL, IIADDQ };
+   ```
+
+2. 译码和写回阶段。
+
+   只需要修改寄存器 B 的部分，因为这个指令我们不需要寄存器 A 取而代之的是立即数。
+
+   srcB：操作数 B（valB）在哪里取？这里表示一个是取自寄存器 B 还是寄存器 `%rsp` 或是不取
+
+   ```c
+   word srcB = [
+   	icode in { IOPQ, IRMMOVQ, IMRMOVQ, IIADDQ  } : rB;
+   	icode in { IPUSHQ, IPOPQ, ICALL, IRET } : RRSP;
+   	1 : RNONE;  # Don't need register
+   ];
+   ```
+
+   dstE：计算结果写回到哪里，肯定我们需要写回到寄存器 B
+
+   ```c
+   word dstE = [
+   	icode in { IRRMOVQ } && Cnd : rB;
+   	icode in { IIRMOVQ, IOPQ, IIADDQ } : rB;
+   	icode in { IPUSHQ, IPOPQ, ICALL, IRET } : RRSP;
+   	1 : RNONE;  # Don't write any register
+   ];
+   ```
+
+3. 执行阶段
+
+   aluA：ALU 的 A 输入端，应该输入的是立即数
+
+   ```c
+   word aluA = [
+   	icode in { IRRMOVQ, IOPQ } : valA;
+   	icode in { IIRMOVQ, IRMMOVQ, IMRMOVQ, IIADDQ } : valC;
+   	icode in { ICALL, IPUSHQ } : -8;
+   	icode in { IRET, IPOPQ } : 8;
+   	# Other instructions don't need ALU
+   ];
+   ```
+
+   aluB：ALU 的 B 输入端，应该输入的是 valB
+
+   ```c
+   word aluB = [
+   	icode in { IRMMOVQ, IMRMOVQ, IOPQ, ICALL, 
+   		      IPUSHQ, IRET, IPOPQ, IIADDQ } : valB;
+   	icode in { IRRMOVQ, IIRMOVQ } : 0;
+   	# Other instructions don't need ALU
+   ];
+   ```
+
+   set_cc：是否需要设置条件码
+
+   ```c
+   bool set_cc = icode in { IOPQ, IIADDQ };
+   ```
+
+访存阶段和更新 PC 阶段都不需要额外修改内容，因为这个指令不涉及访存。
+
+运行测试
+
+```shell
+./ssim -t ../y86-code/asumi.yo
+(cd ../y86-code; make testssim)
+(cd ../ptest; make SIM=../seq/ssim) 
+(cd ../ptest; make SIM=../seq/ssim TFLAGS=-i)
+```
+
+
+
