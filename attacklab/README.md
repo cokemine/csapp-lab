@@ -74,7 +74,7 @@ End of assembler dump.
 c0 17 40 00 00 00 00 00
 ```
 
-通过 hex2raw 程序可以将 16 进制字符串转换为 2进制字符串（空格和换行都会被 trim 掉）
+通过 hex2raw 程序可以将 16 进制字符串转换为 2 进制字符串（空格和换行都会被 trim 掉）
 
 ```bash
 ❯ ./hex2raw < ./ans/phase_1.txt > ./ans/phase_1
@@ -93,7 +93,7 @@ PASS: Would have posted the following:
 
 ### Phase 2
 
-与Phase 1 共有一个程序，Phase 2 要求我们调用到 touch2 函数，并且正确传入参数（在 cookie.txt 里）
+与 Phase 1 共有一个程序，Phase 2 要求我们调用到 touch2 函数，并且正确传入参数（在 cookie.txt 里）
 
 ```c
 void touch2(unsigned val)
@@ -110,7 +110,7 @@ void touch2(unsigned val)
 }
 ```
 
-思路比较简单。因为  `test` 函数会向栈空间写入数据，只要栈内存是可执行的，我们可以把在 Phase 1里填入的无用的数据换成自己编写的代码。然后在移除后的返回地址从 `touch1` 函数的地址换成我们自己编写的代码的首地址。
+思路比较简单。因为  `test` 函数会向栈空间写入数据，只要栈内存是可执行的，我们可以把在 Phase 1 里填入的无用的数据换成自己编写的代码。然后在移除后的返回地址从 `touch1` 函数的地址换成我们自己编写的代码的首地址。
 
 我们自己编写的那段代码需要做两件事：
 
@@ -166,7 +166,7 @@ ec 17 40 00 c3 00 00 00
 
 ### Phase 3
 
-与 Phase 1、2 共用一个程序，Phase 3 要求我们调用到 touch3 函数，要求我们将 cookie 以字符串的形式传入（而不是像 Phase 2 一样传入一个16进制的立即数）
+与 Phase 1、2 共用一个程序，Phase 3 要求我们调用到 touch3 函数，要求我们将 cookie 以字符串的形式传入（而不是像 Phase 2 一样传入一个 16 进制的立即数）
 
 ```c
 /* Compare string to hex represention of unsigned value */
@@ -198,7 +198,7 @@ void touch3(char *sval)
 > portions of memory that held the buffer used by `getbuf`. As a result, you will need to be careful
 > where you place the string representation of your cookie.  
 
-1. 确认字符串 `59b997fa` 的16进制表示，可以手查 ASCII 码表或网上有一键转换的工具（根据第二条提示，注入的字符串需要添加字符串终止符 `\0`
+1. 确认字符串 `59b997fa` 的 16 进制表示，可以手查 ASCII 码表或网上有一键转换的工具（根据第二条提示，注入的字符串需要添加字符串终止符 `\0`
 
    ```
    35 39 62 39 39 37 66 61 00
