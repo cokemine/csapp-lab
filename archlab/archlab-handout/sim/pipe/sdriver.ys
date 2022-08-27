@@ -11,6 +11,7 @@ main:	irmovq Stack, %rsp  	# Set up stack pointer
 	call ncopy		 
 	halt			# should halt with num nonzeros in %rax
 StartFun:
+# https://111qqz.com/2020/02/csapp-archlab/
 #/* $begin ncopy-ys */
 ##################################################################
 # ncopy.ys - Copy a src block of len words to dst.
@@ -30,22 +31,38 @@ ncopy:
 # You can modify this portion
 	# Loop header
 	xorq %rax,%rax		# count = 0;
-	andq %rdx,%rdx		# len <= 0?
-	jle Done		# if so, goto Done:
+	iaddq $-1, %rdx
+	jle Single		# if so, goto Single:
 
-Loop:	mrmovq (%rdi), %r10	# read val from src...
+Loop:	
+	mrmovq (%rdi), %r10	# read val from src...
+	mrmovq 8(%rdi), %r11 # read val2 from src++
 	rmmovq %r10, (%rsi)	# ...and store it to dst
+	rmmovq %r11, 8(%rsi) # .. store val2 to dst++
 	andq %r10, %r10		# val <= 0?
 	jle Npos		# if so, goto Npos:
-	irmovq $1, %r10
-	addq %r10, %rax		# count++
-Npos:	irmovq $1, %r10
-	subq %r10, %rdx		# len--
-	irmovq $8, %r10
-	addq %r10, %rdi		# src++
-	addq %r10, %rsi		# dst++
-	andq %rdx,%rdx		# len > 0?
+	iaddq $1, %rax
+
+Npos:
+	andq %r11, %r11	# val2 <= 0?
+	jle	Npos2		# if so, goto Npos2:
+	iaddq $1, %rax
+
+Npos2:	
+	iaddq $-1, %rdx		# len-=2
+	iaddq $16, %rdi		# src++
+	iaddq $16, %rsi		# dst++
+	iaddq  $-1, %rdx
 	jg Loop			# if so, goto Loop:
+
+Single:
+	andq %rdx, %rdx
+	jl Done
+	mrmovq (%rdi),%r10
+	rmmovq %r10, (%rsi)
+	andq %r10, %r10
+	jle Done 
+	iaddq $1, %rax
 ##################################################################
 # Do not modify the following section of code
 # Function epilogue.
@@ -62,10 +79,10 @@ EndFun:
 ###############################
 	.align 8
 src:
-	.quad 1
-	.quad 2
-	.quad -3
-	.quad -4
+	.quad -1
+	.quad -2
+	.quad 3
+	.quad 4
 	.quad 0xbcdefa # This shouldn't get moved
 
 	.align 16

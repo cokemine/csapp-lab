@@ -14,6 +14,8 @@
 
    ![](https://i.imgur.com/1tIkwCl.png)
 
+4. 由于这个 lab 代码时间久远，可能会存在一些依赖问题（如 tcl/tk 版本问题）以及 gcc 版本问题也可能导致需要修改部分编译参数或是代码才可以成功编译，建议遇到错误去搜索解决办法，因为在这里解释也有一定时效性，不确定过几年对于新版本系统/编译器还能否运行。~~随便改改能编译就行了，谁知道为什么能跑起来~~
+
 ### Part A
 
 #### 1. sum.ys: Iteratively sum linked list elements
@@ -282,5 +284,8 @@ stack:
 (cd ../ptest; make SIM=../seq/ssim TFLAGS=-i)
 ```
 
+## Part C
 
+修改 `ncopy.ys` 和 `pipe-full.hcl` 两个文件，使得 `ncopy.ys` 运行得尽可能快。
 
+Todo
